@@ -93,7 +93,7 @@ export async function reviewRedactions(
 			}
 			safeSignatures.add(selectedOccurrence.signature);
 			history.push({ type: "safe", signature: selectedOccurrence.signature });
-			ctx.ui.notify(`Marked safe: ${selectedOccurrence.value}`, "info");
+			ctx.ui.notify(`Marked safe: ${displayText(selectedOccurrence.value)}`, "info");
 			continue;
 		}
 
@@ -106,12 +106,12 @@ export async function reviewRedactions(
 			const rule = createRuleFromOccurrence(selectedOccurrence);
 			const matches = countRuleMatches(applied.text, rule);
 			if (matches === 0) {
-				ctx.ui.notify(`No matches left for ${selectedOccurrence.value}`, "warning");
+				ctx.ui.notify(`No matches left for ${displayText(selectedOccurrence.value)}`, "warning");
 				continue;
 			}
 			rules.push(rule);
 			history.push({ type: "rule", rule });
-			ctx.ui.notify(`Redacted ${matches} match(es): ${selectedOccurrence.value}`, "info");
+			ctx.ui.notify(`Redacted ${matches} match(es): ${displayText(selectedOccurrence.value)}`, "info");
 			continue;
 		}
 
@@ -408,7 +408,7 @@ function renderDetails(
 		lines.push(truncateToWidth(`${theme.fg("muted", "Why: ")}${occurrence.reason}`, width));
 		lines.push(truncateToWidth(`${theme.fg("muted", "Matches: ")}${occurrence.sessionCount} across session`, width));
 		lines.push(truncateToWidth(`${theme.fg("muted", "Replace with: ")}${occurrence.suggestedPlaceholder}`, width));
-		lines.push(truncateToWidth(`${theme.fg("muted", "Value: ")}${theme.fg("warning", occurrence.value)}`, width));
+		lines.push(truncateToWidth(`${theme.fg("muted", "Value: ")}${theme.fg("warning", displayText(occurrence.value))}`, width));
 	} else {
 		lines.push(theme.fg("success", "No suspicious values on this block."));
 		lines.push(theme.fg("muted", "Browse the transcript, add a manual literal/regex, or open the raw editor."));
@@ -425,11 +425,12 @@ function renderExcerpt(
 ): string[] {
 	const lines: string[] = [theme.fg("accent", theme.bold("Excerpt"))];
 	const start = occurrence ? Math.max(0, occurrence.lineIndex - 3) : 0;
-	const end = Math.min(block.lines.length, start + 10);
+	const end = Math.min(block.displayLines.length, start + 10);
 	for (let i = start; i < end; i++) {
 		const lineNo = `${String(i + 1).padStart(2, " ")} `;
 		const prefix = i === occurrence?.lineIndex ? theme.fg("accent", `${lineNo}› `) : theme.fg("dim", `${lineNo}  `);
-		const highlighted = occurrence && i === occurrence.lineIndex ? highlightValue(theme, block.lines[i]!, occurrence.value) : block.lines[i]!;
+		const line = block.displayLines[i] ?? "";
+		const highlighted = occurrence && i === occurrence.lineIndex ? highlightValue(theme, line, displayText(occurrence.value)) : line;
 		const wrapped = wrapTextWithAnsi(highlighted, Math.max(12, width - visibleWidth(prefix)));
 		wrapped.forEach((part, partIndex) => {
 			const linePrefix = partIndex === 0 ? prefix : " ".repeat(visibleWidth(prefix));
@@ -490,6 +491,17 @@ function syncSelectedBlockId(model: ReviewModel, selectedBlockId: string | undef
 
 function clampLines(lines: string[], width: number): string[] {
 	return lines.map((line) => truncateToWidth(line, width));
+}
+
+function displayText(value: string): string {
+	return value
+		.replace(/\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/g, "")
+		.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/\u001B[@-_]/g, "")
+		.replace(/\t/g, "  ")
+		.replace(/\r/g, "")
+		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+		.trim() || "(empty)";
 }
 
 function helpText(_wide: boolean, width: number): string {

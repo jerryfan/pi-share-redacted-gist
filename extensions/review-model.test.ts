@@ -65,6 +65,36 @@ describe("buildReviewModel", () => {
 		const values = filtered.blocks.flatMap((block) => block.occurrences.map((entry) => entry.value));
 		expect(values).not.toContain("abc123SECRET456");
 	});
+
+	test("strips ansi and control sequences from display lines", () => {
+		const input = [
+			JSON.stringify({
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "call_1",
+					toolName: "bash",
+					content: [{ type: "text", text: "\u001b[31mFAIL\u001b[0m\r\nnext\tline\u0007" }],
+					isError: false,
+				},
+			}),
+		].join("\n");
+
+		const model = buildReviewModel(input);
+		expect(model.blocks[0]?.displayLines).toEqual(["FAIL", "next  line"]);
+		expect(model.blocks[0]?.summary).toBe("FAIL");
+	});
+
+		test("does not flag file line references as sensitive assignments", () => {
+			const input = [
+				"README.md:32-49",
+				"extensions/share-redacted-gist.ts:35-132",
+				"extensions/share-redacted-gist.ts:69-90",
+				"package.json:23-38",
+			].join("\n");
+			const model = buildReviewModel(input);
+			expect(model.totalOccurrences).toBe(0);
+		});
 });
 
 describe("manual redactions", () => {

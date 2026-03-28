@@ -14,6 +14,7 @@ export type ReviewBlock = {
 	subtitle?: string;
 	text: string;
 	lines: string[];
+	displayLines: string[];
 	summary: string;
 	occurrences: ReviewOccurrence[];
 	riskScore: number;
@@ -185,6 +186,7 @@ function extractMessageBlocks(startIndex: number, message: JsonRecord): ReviewBl
 
 function createBlock(index: number, title: string, subtitle: string | undefined, text: string): ReviewBlock {
 	const normalized = normalizeBlockText(text);
+	const displayText = sanitizeForDisplay(normalized);
 	return {
 		id: `block-${index}`,
 		index,
@@ -192,7 +194,8 @@ function createBlock(index: number, title: string, subtitle: string | undefined,
 		subtitle,
 		text: normalized,
 		lines: normalized.split(/\r?\n/),
-		summary: firstMeaningfulLine(normalized),
+		displayLines: displayText.split(/\r?\n/),
+		summary: firstMeaningfulLine(displayText),
 		occurrences: [],
 		riskScore: 0,
 	};
@@ -219,6 +222,7 @@ function detectSecretAssignments(block: ReviewBlock, line: string, lineIndex: nu
 	for (const match of line.matchAll(SECRET_ASSIGNMENT_PATTERN)) {
 		const key = match[1] ?? "value";
 		const rawValue = trimWrappedValue(match[2] ?? "");
+		if (looksLikeFileLineReference(line, match.index ?? 0, rawValue)) continue;
 		if (!looksSensitiveValue(rawValue)) continue;
 		const keyScore = SECRET_CONTEXT_PATTERN.test(key) ? 115 : 90;
 		drafts.push(buildDraft(block, lineIndex, line, rawValue, keyScore, `${key} value`, `Sensitive-looking value assigned to ${key}`, suggestPlaceholder(rawValue)));
@@ -365,6 +369,17 @@ function normalizeBlockText(text: string): string {
 	return normalized || "(empty)";
 }
 
+function sanitizeForDisplay(text: string): string {
+	return text
+		.replace(/\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/g, "")
+		.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/\u001B[@-_]/g, "")
+		.replace(/\t/g, "  ")
+		.replace(/\r/g, "")
+		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+		.trim() || "(empty)";
+}
+
 function firstMeaningfulLine(text: string): string {
 	const line = text.split(/\r?\n/).find((entry) => entry.trim());
 	if (!line) return "(empty)";
@@ -377,6 +392,15 @@ function trimWrappedValue(value: string): string {
 		return trimmed.slice(1, -1);
 	}
 	return sanitizeValue(trimmed);
+}
+
+function looksLikeFileLineReference(line: string, matchIndex: number, rawValue: string): boolean {
+	if (!/^\d+(?:-\d+)?$/.test(rawValue)) return false;
+	const previousChar = matchIndex > 0 ? line[matchIndex - 1] : "";
+	if (previousChar === "." || previousChar === "/" || previousChar === "\\") return true;
+	const prefix = line.slice(Math.max(0, matchIndex - 120), matchIndex);
+	const trailingToken = prefix.match(/[^\s'"`()\[\]{}<>]+$/)?.[0] ?? "";
+	return /[./\\][A-Za-z0-9_-]*\.$/.test(trailingToken) || /[./\\]/.test(trailingToken);
 }
 
 function sanitizeValue(value: string): string {
