@@ -16,9 +16,7 @@
   "files": [
     "extensions",
     "README.md",
-    "LICENSE",
-    "AGENTS.md",
-    "CLAUDE.md"
+    "LICENSE"
   ],
   "scripts": {
     "check": "bun -e \"import('./extensions/share-redacted-gist.ts').then(() => console.log('ok'))\"",
