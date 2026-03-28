@@ -1,0 +1,46 @@
+{
+  "name": "pi-share-redacted-gist",
+  "version": "0.1.0",
+  "description": "Pi package: publish a redacted pi session as a public GitHub gist",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "gist",
+    "github",
+    "redaction",
+    "openagentsessions"
+  ],
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "scripts": {
+    "check": "bun -e \"import('./extensions/share-redacted-gist.ts').then(() => console.log('ok'))\"",
+    "pack:check": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lukaskawerau/pi-share-redacted-gist.git"
+  },
+  "homepage": "https://github.com/lukaskawerau/pi-share-redacted-gist#readme",
+  "bugs": {
+    "url": "https://github.com/lukaskawerau/pi-share-redacted-gist/issues"
+  }
+}
