@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 - 2026-03-28
+
+### Added
+- added transcript-aware sensitive-file redaction for `read`, `write`, and `edit` tool payloads
+- added correlation-based redaction of follow-up tool results for sensitive file operations
+- added bash heuristics to redact outputs from obvious file-read commands targeting sensitive files
+- added configurable `redaction.sensitiveFiles.extraPatterns` path matching
+- added a stronger README warranty/liability warning and explicit manual-review guidance
+- added regression tests for sensitive file tool calls, bash reads, and config-driven path patterns
+
+### Changed
+- run sensitive-file redaction before the generic pattern/secret scanner pass
+- preserve transcript structure while replacing high-risk file contents with `[REDACTED_SENSITIVE_FILE_CONTENT]`
+- expanded README coverage for sensitive-file redaction behavior and configuration
+
 ## 0.6.0 - 2026-03-28
 
 ### Added

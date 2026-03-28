@@ -1,6 +1,6 @@
 {
   "name": "pi-share-redacted-gist",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Pi package: publish a redacted pi session to GitHub gists and first-class Hugging Face datasets",
   "type": "module",
   "license": "MIT",
