@@ -14,9 +14,11 @@
     "openagentsessions"
   ],
   "files": [
-    "extensions",
+    "extensions/*.ts",
+    "!extensions/*.test.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "bun test",
