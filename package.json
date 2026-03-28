@@ -1,6 +1,6 @@
 {
   "name": "pi-share-redacted-gist",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Pi package: publish a redacted pi session as a public GitHub gist",
   "type": "module",
   "license": "MIT",

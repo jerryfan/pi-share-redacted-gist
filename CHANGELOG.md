@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-03-28
 
 ### Added
 - added a transcript-style redaction review UI focused on under-redaction
@@ -10,6 +10,8 @@
 ### Changed
 - replaced the raw full-session editor as the default review step with a block-based reviewer
 - kept the raw editor as an explicit escape hatch from the reviewer
+- sanitized reviewer display output to avoid TUI glitches from ANSI/control sequences
+- reduced false positives for file line references such as `README.md:32-49` and `package.json:23-38`
 
 ## 0.3.0 - 2026-03-28
 
