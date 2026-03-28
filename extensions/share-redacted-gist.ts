@@ -4,6 +4,8 @@ import path from "node:path";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { redactSensitive, type RedactionStat } from "./redaction";
+
 type ShareArgs = {
 	sessionPath?: string;
 	description?: string;
@@ -12,17 +14,6 @@ type ShareArgs = {
 	tags?: string;
 	yes: boolean;
 	noReview: boolean;
-};
-
-type RedactionRule = {
-	label: string;
-	pattern: RegExp;
-	replace: string;
-};
-
-type RedactionStat = {
-	label: string;
-	count: number;
 };
 
 type OpenAgentSessionsMetadata = {
@@ -305,66 +296,6 @@ function redactedSessionFilename(sessionPath: string): string {
 	return `${base.slice(0, -ext.length)}.redacted${ext}`;
 }
 
-function redactSensitive(
-	text: string,
-	options: { cwd: string; homeDir: string; usernameCandidates: string[] },
-): { text: string; stats: RedactionStat[] } {
-	const rules: RedactionRule[] = [
-		{ label: "email", pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, replace: "[REDACTED_EMAIL]" },
-		{
-			label: "phone",
-			pattern: /\b(?:\+\d{1,3}[\s-]?)?(?:\(\d{2,4}\)|\d{2,4})[\s-]\d{3,4}[\s-]\d{3,4}\b/g,
-			replace: "[REDACTED_PHONE]",
-		},
-		{
-			label: "ipv4",
-			pattern: /\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/g,
-			replace: "[REDACTED_IP]",
-		},
-		{ label: "github_token", pattern: /\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,})\b/g, replace: "[REDACTED_TOKEN]" },
-		{
-			label: "api_key",
-			pattern: /\b(?:sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,})\b/g,
-			replace: "[REDACTED_SECRET]",
-		},
-		{ label: "jwt", pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, replace: "[REDACTED_JWT]" },
-		{ label: "home_path", pattern: /\/home\/[^/\s]+\//g, replace: "/home/[REDACTED_USER]/" },
-		{ label: "windows_path", pattern: /[A-Za-z]:\\Users\\[^\\\s]+\\/g, replace: "C:\\Users\\[REDACTED_USER]\\" },
-		{ label: "private_url", pattern: /https?:\/\/[^\s"']+\.(?:local|internal|lan)\b/gi, replace: "[REDACTED_PRIVATE_URL]" },
-	];
-
-	if (options.cwd.trim()) {
-		rules.push({ label: "cwd", pattern: new RegExp(escapeRegExp(options.cwd), "g"), replace: "[REDACTED_CWD]" });
-	}
-	if (options.homeDir.trim()) {
-		rules.push({
-			label: "home_dir",
-			pattern: new RegExp(escapeRegExp(options.homeDir), "g"),
-			replace: "/home/[REDACTED_USER]",
-		});
-	}
-	for (const username of options.usernameCandidates) {
-		if (username.length < 3) continue;
-		rules.push({
-			label: "username",
-			pattern: new RegExp(`\\b${escapeRegExp(username)}\\b`, "g"),
-			replace: "[REDACTED_USER]",
-		});
-	}
-
-	let output = text;
-	const stats: RedactionStat[] = [];
-	for (const rule of rules) {
-		let count = 0;
-		output = output.replace(rule.pattern, () => {
-			count += 1;
-			return rule.replace;
-		});
-		if (count > 0) stats.push({ label: rule.label, count });
-	}
-	return { text: output, stats };
-}
-
 function tokenizeArgs(input: string): string[] {
 	if (!input.trim()) return [];
 	const tokens: string[] = [];
@@ -427,8 +358,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isoTimestamp(): string {
 	return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

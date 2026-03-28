@@ -9,7 +9,7 @@ Installs one pi extension command:
 ## What it does
 
 - reads the current persisted pi session file, or `--session @path`
-- redacts common sensitive patterns
+- redacts common sensitive patterns plus long random-looking opaque tokens
 - opens an editor review step by default
 - asks for publication attestation unless `--yes`
 - creates a public GitHub gist with:
@@ -61,6 +61,7 @@ Flags:
 ## Development
 
 ```bash
+bun test
 bun run check
 npm pack --dry-run
 ```

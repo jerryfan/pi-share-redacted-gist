@@ -1,6 +1,6 @@
 {
   "name": "pi-share-redacted-gist",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi package: publish a redacted pi session as a public GitHub gist",
   "type": "module",
   "license": "MIT",
@@ -19,7 +19,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "bun -e \"import('./extensions/share-redacted-gist.ts').then(() => console.log('ok'))\"",
+    "test": "bun test",
+    "check": "bun test && bun -e \"import('./extensions/share-redacted-gist.ts').then(() => console.log('ok'))\"",
     "pack:check": "npm pack --dry-run"
   },
   "peerDependencies": {
