@@ -181,10 +181,3 @@ bun test
 bun run check
 npm pack --dry-run
 ```
-
-## Publish
-
-```bash
-npm login
-npm publish
-```
