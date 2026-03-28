@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
@@ -68,12 +69,19 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 
 			let finalSessionText = redactedSession;
 			if (ctx.hasUI && !args.noReview) {
-				const edited = await ctx.ui.editor("Review redacted session file before publish", redactedSession);
-				if (edited === undefined) {
+				const { reviewRedactions } = await importLocalModule<{ reviewRedactions: typeof import("./review-ui").reviewRedactions }>("review-ui.ts");
+				const reviewed = await reviewRedactions(ctx, redactedSession);
+				if (!reviewed) {
 					ctx.ui.notify("Cancelled", "info");
 					return;
 				}
-				finalSessionText = edited;
+				finalSessionText = reviewed.text;
+				if (reviewed.manualRuleCount > 0) {
+					ctx.ui.notify(
+						`Review applied ${reviewed.manualRuleCount} manual redaction rule(s); ${reviewed.remainingCandidates} suspicious value(s) left`,
+						"info",
+					);
+				}
 			}
 
 			const consentConfirmed = await confirmAttestation(ctx, args.yes, sessionPath, stats);
@@ -383,6 +391,13 @@ function toErrorMessage(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
+}
+
+async function importLocalModule<T>(filename: string): Promise<T> {
+	const currentFile = fileURLToPath(import.meta.url);
+	const resolvedCurrentFile = await fs.realpath(currentFile).catch(() => currentFile);
+	const moduleUrl = pathToFileURL(path.join(path.dirname(resolvedCurrentFile), filename)).href;
+	return (await import(moduleUrl)) as T;
 }
 
 function isoTimestamp(): string {

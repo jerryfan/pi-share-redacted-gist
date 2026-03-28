@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- added a transcript-style redaction review UI focused on under-redaction
+- added manual literal and regex redaction actions with undo support
+- added review-model tests for transcript extraction and manual redaction helpers
+
+### Changed
+- replaced the raw full-session editor as the default review step with a block-based reviewer
+- kept the raw editor as an explicit escape hatch from the reviewer
+
 ## 0.3.0 - 2026-03-28
 
 ### Added

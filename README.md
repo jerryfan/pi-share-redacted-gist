@@ -10,7 +10,7 @@ Installs one pi extension command:
 
 - reads the current persisted pi session file, or `--session @path`
 - redacts common sensitive patterns plus long random-looking opaque tokens
-- opens an editor review step by default
+- opens a transcript-style review UI by default
 - asks for publication attestation unless `--yes`
 - creates a public GitHub gist with:
   - `<session>.redacted.jsonl`
@@ -37,6 +37,17 @@ Then inside pi:
 /share-redacted --topic "auth bugfix" --language "typescript" --tags "bugfix,auth"
 /share-redacted --desc "Open agent session (CC0)" --no-review --yes
 ```
+
+Review UI:
+
+- transcript blocks instead of raw JSONL
+- highlights suspicious leftovers the automatic redactor did not catch
+- `r` redacts the current suspicious value everywhere
+- `s` marks the current suspicious value safe
+- `a` adds a literal global redaction
+- `x` adds a regex global redaction
+- `u` undoes the last manual action
+- `e` opens the raw editor as an escape hatch
 
 Flags:
 
