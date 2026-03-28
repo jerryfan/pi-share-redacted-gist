@@ -35,7 +35,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/lukaskawerau/pi-share-redacted-gist.git"
+    "url": "git+https://github.com/lukaskawerau/pi-share-redacted-gist.git"
   },
   "homepage": "https://github.com/lukaskawerau/pi-share-redacted-gist#readme",
   "bugs": {
