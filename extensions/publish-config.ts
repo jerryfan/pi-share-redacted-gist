@@ -16,10 +16,18 @@ export type HuggingFacePublisherConfig = {
 	pathPrefix?: string;
 };
 
+export type SensitiveFilesRedactionConfig = {
+	enabled?: boolean;
+	extraPatterns?: string[];
+};
+
 export type PublishConfig = {
 	publishers?: {
 		gist?: GistPublisherConfig;
 		huggingface?: HuggingFacePublisherConfig;
+	};
+	redaction?: {
+		sensitiveFiles?: SensitiveFilesRedactionConfig;
 	};
 };
 
@@ -75,7 +83,9 @@ function readConfigFile(pathname: string, warnings: string[], loadedPaths: strin
 function mergePublishConfig(globalConfig: PublishConfig, projectConfig: PublishConfig): PublishConfig {
 	const globalPublishers = globalConfig.publishers;
 	const projectPublishers = projectConfig.publishers;
-	if (!globalPublishers && !projectPublishers) return {};
+	const globalSensitiveFiles = globalConfig.redaction?.sensitiveFiles;
+	const projectSensitiveFiles = projectConfig.redaction?.sensitiveFiles;
+	if (!globalPublishers && !projectPublishers && !globalSensitiveFiles && !projectSensitiveFiles) return {};
 
 	return {
 		publishers: {
@@ -89,7 +99,20 @@ function mergePublishConfig(globalConfig: PublishConfig, projectConfig: PublishC
 				datasets: projectPublishers?.huggingface?.datasets ?? globalPublishers?.huggingface?.datasets,
 			},
 		},
+		redaction: {
+			sensitiveFiles: {
+				...globalConfig.redaction?.sensitiveFiles,
+				...projectConfig.redaction?.sensitiveFiles,
+				extraPatterns: mergeStringLists(globalConfig.redaction?.sensitiveFiles?.extraPatterns, projectConfig.redaction?.sensitiveFiles?.extraPatterns),
+			},
+		},
 	};
+}
+
+function mergeStringLists(globalValues: string[] | undefined, projectValues: string[] | undefined): string[] | undefined {
+	const merged = [...(globalValues ?? []), ...(projectValues ?? [])].map((entry) => entry.trim()).filter(Boolean);
+	if (merged.length === 0) return undefined;
+	return [...new Set(merged)];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

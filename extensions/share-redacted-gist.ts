@@ -9,6 +9,7 @@ import { resolveHuggingFaceAccessToken } from "./huggingface-auth";
 import { getConfiguredDatasets, loadPublishConfig, type PublishConfig } from "./publish-config";
 import { buildSubmissionMessage, publishToGist, publishToHuggingFace, type PublicationBundle, type PublisherChoice } from "./publishers";
 import { redactSensitive, type RedactionStat } from "./redaction";
+import { redactSensitiveFileToolPayloads } from "./sensitive-file-redaction";
 
 export { buildSubmissionMessage } from "./publishers";
 
@@ -73,11 +74,17 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 				return;
 			}
 
-			const { text: redactedSession, stats } = redactSensitive(rawSession, {
+			const sensitiveFilePass = redactSensitiveFileToolPayloads(rawSession, {
+				enabled: publishConfig.config.redaction?.sensitiveFiles?.enabled,
+				extraPatterns: publishConfig.config.redaction?.sensitiveFiles?.extraPatterns,
+			});
+			const genericPass = redactSensitive(sensitiveFilePass.text, {
 				cwd: ctx.cwd,
 				homeDir: os.homedir(),
 				usernameCandidates: collectUsernames(),
 			});
+			const redactedSession = genericPass.text;
+			const stats = mergeRedactionStats(sensitiveFilePass.stats, genericPass.stats);
 
 			let finalSessionText = redactedSession;
 			if (ctx.hasUI && !args.noReview) {
@@ -408,6 +415,16 @@ function extractCurrentModel(model: unknown): string | undefined {
 	const provider = typeof model.provider === "string" ? model.provider : undefined;
 	if (id && provider) return `${provider}/${id}`;
 	return id;
+}
+
+function mergeRedactionStats(...collections: ReadonlyArray<ReadonlyArray<RedactionStat>>): RedactionStat[] {
+	const merged = new Map<string, number>();
+	for (const collection of collections) {
+		for (const entry of collection) {
+			merged.set(entry.label, (merged.get(entry.label) ?? 0) + entry.count);
+		}
+	}
+	return [...merged.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([label, count]) => ({ label, count }));
 }
 
 function redactedSessionFilename(sessionPath: string): string {

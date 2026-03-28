@@ -10,6 +10,7 @@ Installs one pi extension command:
 
 - reads the current persisted pi session file, or `--session @path`
 - redacts common sensitive patterns plus a detect-secrets-inspired plugin stack for secrets/tokens
+- wholesale-redacts tool read/write/edit payloads plus obvious bash-read outputs for high-risk files like `.env`, SSH keys, cloud credentials, and kube/docker configs
 - opens a transcript-style review UI by default
 - asks for publication attestation unless `--yes`
 - publishes two files:
@@ -92,6 +93,15 @@ Example:
       "visibility": "public",
       "pathPrefix": "sessions"
     }
+  },
+  "redaction": {
+    "sensitiveFiles": {
+      "enabled": true,
+      "extraPatterns": [
+        "config/private.settings",
+        "/(^|\\/)secrets\\/[^/]+\\.txt$/i"
+      ]
+    }
   }
 }
 ```
@@ -102,6 +112,8 @@ Recommended setup:
 2. add a Hugging Face access token via `HF_TOKEN` or pi `auth.json`
 3. configure that dataset in `pi-share-redacted-gist.json`
 4. run `/share-redacted --publisher huggingface` or `/share-redacted --publisher both`
+
+`redaction.sensitiveFiles.extraPatterns` accepts either exact basename/path-suffix matches or `/regex/flags` strings.
 
 Auth:
 
@@ -127,6 +139,19 @@ Notes:
 - for GitHub gist publishing: `gh` CLI installed and authenticated
 - for Hugging Face publishing: `HF_TOKEN` or `~/.pi/agent/auth.json` entry for `huggingface`
 - a persisted pi session file
+
+## Legal / warranty notice
+
+This extension is provided **as-is**, with **no warranty** of any kind, express or implied.
+
+By using it, you accept that:
+
+- you are solely responsible for reviewing anything before you publish it
+- you are solely responsible for any credentials, secrets, personal data, source code, or other information you choose to share
+- automatic redaction can reduce risk, but it cannot guarantee that every sensitive value or file will be caught
+- the authors and contributors are not liable for any loss, damages, claims, or other consequences arising from use of this extension or from any data you publish with it
+
+If leaking a session would hurt, assume the redactor missed something and review it manually before publishing. Paranoia earns its keep.
 
 ## Package notes
 
