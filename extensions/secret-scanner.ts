@@ -44,6 +44,7 @@ export const DEFAULT_SECRET_PLUGIN_CONFIGS: SecretPluginConfig[] = [
 	{ name: "GitHubTokenDetector" },
 	{ name: "AwsKeyDetector" },
 	{ name: "OpenAIDetector" },
+	{ name: "HuggingFaceTokenDetector" },
 	{ name: "GoogleApiKeyDetector" },
 	{ name: "SlackTokenDetector" },
 	{ name: "JwtDetector" },
@@ -346,6 +347,20 @@ class OpenAIDetector extends RegexBasedSecretPlugin {
 	}
 }
 
+class HuggingFaceTokenDetector extends RegexBasedSecretPlugin {
+	readonly name = "HuggingFaceTokenDetector";
+	readonly secretType = "huggingface_token";
+	protected readonly denylist = [/\bhf_[A-Za-z0-9]{20,}\b/g] as const;
+
+	protected placeholderFor(): string {
+		return "[REDACTED_TOKEN]";
+	}
+
+	protected scoreFor(): number {
+		return 152;
+	}
+}
+
 class GoogleApiKeyDetector extends RegexBasedSecretPlugin {
 	readonly name = "GoogleApiKeyDetector";
 	readonly secretType = "google_api_key";
@@ -403,6 +418,7 @@ const BUILTIN_PLUGIN_FACTORIES: Record<string, (options?: Record<string, unknown
 	GitHubTokenDetector: () => new GitHubTokenDetector(),
 	AwsKeyDetector: () => new AwsKeyDetector(),
 	OpenAIDetector: () => new OpenAIDetector(),
+	HuggingFaceTokenDetector: () => new HuggingFaceTokenDetector(),
 	GoogleApiKeyDetector: () => new GoogleApiKeyDetector(),
 	SlackTokenDetector: () => new SlackTokenDetector(),
 	JwtDetector: () => new JwtDetector(),

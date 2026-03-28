@@ -19,6 +19,16 @@ describe("secret scanner", () => {
 		});
 	});
 
+	test("detects hugging face tokens before keyword fallback", () => {
+		const findings = scanSecrets("HF_TOKEN=hf_abcdefghijklmnopqrstuvwxyz1234567890");
+		expect(findings).toHaveLength(1);
+		expect(findings[0]).toMatchObject({
+			secretType: "huggingface_token",
+			value: "hf_abcdefghijklmnopqrstuvwxyz1234567890",
+			placeholder: "[REDACTED_TOKEN]",
+		});
+	});
+
 	test("detects private key blocks", () => {
 		const findings = scanSecrets([
 			"-----BEGIN OPENSSH PRIVATE KEY-----",

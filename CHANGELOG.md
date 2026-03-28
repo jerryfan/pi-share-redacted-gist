@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 - 2026-03-28
+
+### Added
+- added Hugging Face dataset publishing via `@huggingface/hub`
+- added merged global/project config files for publisher selection and dataset lists
+- added Hugging Face token resolution from `HF_TOKEN` or pi `auth.json`
+- added regression tests for Hugging Face token detection and auth-value resolution
+
+### Changed
+- refactored publishing so `/share-redacted` can publish to gist, Hugging Face, or both
+- changed publication attestation text to cover non-gist targets too
+- upload Hugging Face payloads into timestamped `sessions/...` folders instead of repo root
+- expanded secret detection with explicit `hf_...` token redaction
+- updated README for multi-publisher usage and config
+
 ## 0.5.0 - 2026-03-28
 
 ### Added

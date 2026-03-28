@@ -1,7 +1,7 @@
 {
   "name": "pi-share-redacted-gist",
-  "version": "0.5.0",
-  "description": "Pi package: publish a redacted pi session as a public GitHub gist",
+  "version": "0.6.0",
+  "description": "Pi package: publish a redacted pi session to GitHub gists and first-class Hugging Face datasets",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -10,6 +10,7 @@
     "pi-extension",
     "gist",
     "github",
+    "huggingface",
     "redaction",
     "openagentsessions"
   ],
@@ -33,7 +34,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/share-redacted-gist.ts"
     ]
   },
   "repository": {
@@ -43,5 +44,8 @@
   "homepage": "https://github.com/lukaskawerau/pi-share-redacted-gist#readme",
   "bugs": {
     "url": "https://github.com/lukaskawerau/pi-share-redacted-gist/issues"
+  },
+  "dependencies": {
+    "@huggingface/hub": "^2.11.0"
   }
 }

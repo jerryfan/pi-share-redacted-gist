@@ -5,7 +5,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { resolveHuggingFaceAccessToken } from "./huggingface-auth";
+import { getConfiguredDatasets, loadPublishConfig, type PublishConfig } from "./publish-config";
+import { buildSubmissionMessage, publishToGist, publishToHuggingFace, type PublicationBundle, type PublisherChoice } from "./publishers";
 import { redactSensitive, type RedactionStat } from "./redaction";
+
+export { buildSubmissionMessage } from "./publishers";
 
 type ShareArgs = {
 	sessionPath?: string;
@@ -13,6 +18,8 @@ type ShareArgs = {
 	topic?: string;
 	language?: string;
 	tags?: string;
+	dataset?: string;
+	publisher?: PublisherChoice;
 	yes: boolean;
 	noReview: boolean;
 };
@@ -37,12 +44,17 @@ const COMMAND_NAME = "share-redacted";
 
 export default function shareRedactedGist(pi: ExtensionAPI) {
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Publish redacted pi session + openagentsessions.json as public GitHub gist",
+		description: "Publish redacted pi session to GitHub gist and/or Hugging Face dataset",
 		handler: async (rawArgs, ctx) => {
 			const args = parseArgs(rawArgs);
 			if (args instanceof Error) {
 				ctx.ui.notify(args.message, "error");
 				return;
+			}
+
+			const publishConfig = loadPublishConfig(ctx.cwd);
+			for (const warning of publishConfig.warnings) {
+				ctx.ui.notify(warning, "warning");
 			}
 
 			const sessionPath = args.sessionPath
@@ -114,29 +126,67 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 				redaction_stats: stats,
 			};
 
-			const tmpDir = path.join(os.tmpdir(), `pi-openagentsession-${Date.now()}`);
-			const sessionFilename = redactedSessionFilename(sessionPath);
-			const sessionOut = path.join(tmpDir, sessionFilename);
-			const metadataOut = path.join(tmpDir, "openagentsessions.json");
+			const publisher = await resolvePublisherChoice(ctx, args, publishConfig.config);
+			if (!publisher) return;
 
-			try {
-				await fs.mkdir(tmpDir, { recursive: true });
-				await fs.writeFile(sessionOut, finalSessionText, "utf8");
-				await fs.writeFile(metadataOut, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-			} catch (error) {
-				ctx.ui.notify(`Failed writing gist files: ${toErrorMessage(error)}`, "error");
+			let huggingFaceDataset: string | undefined;
+			let huggingFaceToken: string | undefined;
+			if (publisher === "huggingface" || publisher === "both") {
+				huggingFaceDataset = await resolveHuggingFaceDataset(ctx, args, publishConfig.config);
+				if (!huggingFaceDataset) {
+					ctx.ui.notify("No Hugging Face dataset selected.", "error");
+					return;
+				}
+				const auth = await resolveHuggingFaceAccessToken();
+				if (!auth.token) {
+					ctx.ui.notify(buildHuggingFaceAuthMessage(auth.authPath, auth.error), "error");
+					return;
+				}
+				huggingFaceToken = auth.token;
+			}
+
+			const description = args.description ?? publishConfig.config.publishers?.gist?.description ?? "Open agent session (CC0)";
+			const bundle: PublicationBundle = {
+				sessionPath,
+				sessionFilename: redactedSessionFilename(sessionPath),
+				sessionText: finalSessionText,
+				metadataText: `${JSON.stringify(metadata, null, 2)}\n`,
+				createdAt: metadata.created_at,
+				description,
+			};
+
+			const results = [];
+			const failures = [];
+
+			if (publisher === "gist" || publisher === "both") {
+				try {
+					results.push(await publishToGist(pi, bundle));
+				} catch (error) {
+					failures.push({ publisher: "gist" as const, message: toErrorMessage(error) });
+				}
+			}
+
+			if ((publisher === "huggingface" || publisher === "both") && huggingFaceDataset && huggingFaceToken) {
+				try {
+					results.push(
+						await publishToHuggingFace(bundle, {
+							accessToken: huggingFaceToken,
+							dataset: huggingFaceDataset,
+							visibility: publishConfig.config.publishers?.huggingface?.visibility,
+							pathPrefix: publishConfig.config.publishers?.huggingface?.pathPrefix,
+						}),
+					);
+				} catch (error) {
+					failures.push({ publisher: "huggingface" as const, message: toErrorMessage(error) });
+				}
+			}
+
+			if (results.length === 0) {
+				ctx.ui.notify(buildSubmissionMessage(results, failures), "error");
 				return;
 			}
 
-			const description = args.description ?? "Open agent session (CC0)";
-			const gist = await pi.exec("gh", ["gist", "create", sessionOut, metadataOut, "--public", "--desc", description]);
-			if (gist.code !== 0) {
-				ctx.ui.notify(`gh gist create failed: ${gist.stderr.trim() || gist.stdout.trim()}`, "error");
-				return;
-			}
-
-			const url = resolvePublishedGistUrl(gist.stdout, gist.stderr);
-			ctx.ui.notify(buildSubmissionMessage(url), "info");
+			ctx.ui.notify(buildSubmissionMessage(results, failures), failures.length > 0 ? "warning" : "info");
 		},
 	});
 }
@@ -149,7 +199,7 @@ function parseArgs(raw: string): ShareArgs | Error {
 		const token = tokens[i]!;
 		if (token === "--help") {
 			return new Error(
-				"Usage: /share-redacted [--session @path] [--desc \"text\"] [--topic \"text\"] [--language ts] [--tags a,b] [--no-review] [--yes]",
+				"Usage: /share-redacted [--session @path] [--desc \"text\"] [--topic \"text\"] [--language ts] [--tags a,b] [--publisher gist|huggingface|both] [--dataset owner/name] [--no-review] [--yes]",
 			);
 		}
 		if (token === "--yes") {
@@ -195,6 +245,22 @@ function parseArgs(raw: string): ShareArgs | Error {
 			i++;
 			continue;
 		}
+		if (token === "--dataset") {
+			const value = tokens[i + 1];
+			if (!value) return new Error("Missing value for --dataset");
+			args.dataset = value.trim();
+			i++;
+			continue;
+		}
+		if (token === "--publisher" || token === "--target") {
+			const value = tokens[i + 1];
+			if (!value) return new Error(`Missing value for ${token}`);
+			const publisher = parsePublisherChoice(value);
+			if (!publisher) return new Error(`Invalid publisher: ${value}`);
+			args.publisher = publisher;
+			i++;
+			continue;
+		}
 		if (token.startsWith("--")) return new Error(`Unknown flag: ${token}`);
 		if (!args.sessionPath) {
 			args.sessionPath = stripAtPrefix(token);
@@ -204,6 +270,55 @@ function parseArgs(raw: string): ShareArgs | Error {
 	}
 
 	return args;
+}
+
+async function resolvePublisherChoice(
+	ctx: { hasUI: boolean; ui: { select: (title: string, options: string[]) => Promise<string | undefined>; notify: (message: string, level: "info" | "warning" | "error") => void } },
+	args: ShareArgs,
+	config: PublishConfig,
+): Promise<PublisherChoice | undefined> {
+	if (args.publisher) return args.publisher;
+
+	const gistEnabled = config.publishers?.gist?.enabled !== false;
+	const huggingFaceEnabled = config.publishers?.huggingface?.enabled !== false && (getConfiguredDatasets(config).length > 0 || !!args.dataset);
+	const available: PublisherChoice[] = [];
+	if (gistEnabled) available.push("gist");
+	if (huggingFaceEnabled) available.push("huggingface");
+
+	if (available.length === 0) {
+		ctx.ui.notify("No publishers configured. Enable gist and/or configure Hugging Face datasets.", "error");
+		return undefined;
+	}
+	if (available.length === 1) return available[0];
+	if (!ctx.hasUI) {
+		ctx.ui.notify("Multiple publishers available. Pass --publisher gist|huggingface|both.", "error");
+		return undefined;
+	}
+
+	const selection = await ctx.ui.select("Publish to", ["GitHub gist", "Hugging Face dataset", "Both"]);
+	if (selection === undefined) return undefined;
+	if (selection === "GitHub gist") return "gist";
+	if (selection === "Hugging Face dataset") return "huggingface";
+	return "both";
+}
+
+async function resolveHuggingFaceDataset(
+	ctx: { hasUI: boolean; ui: { select: (title: string, options: string[]) => Promise<string | undefined> } },
+	args: ShareArgs,
+	config: PublishConfig,
+): Promise<string | undefined> {
+	if (args.dataset?.trim()) return args.dataset.trim();
+
+	const datasets = getConfiguredDatasets(config);
+	if (datasets.length === 0) return undefined;
+	if (datasets.length === 1) return datasets[0];
+	if (!ctx.hasUI) return config.publishers?.huggingface?.defaultDataset?.trim() || undefined;
+
+	const defaultDataset = config.publishers?.huggingface?.defaultDataset?.trim();
+	const options = defaultDataset && datasets.includes(defaultDataset)
+		? [defaultDataset, ...datasets.filter((dataset) => dataset !== defaultDataset)]
+		: datasets;
+	return await ctx.ui.select("Hugging Face dataset", options);
 }
 
 async function confirmAttestation(
@@ -227,7 +342,7 @@ async function confirmAttestation(
 			`Session: ${path.basename(sessionPath)}`,
 			`Redaction summary: ${summary}`,
 			"",
-			"Continue and create PUBLIC gist?",
+			"Continue and publish?",
 		].join("\n"),
 	);
 }
@@ -332,6 +447,14 @@ function tokenizeArgs(input: string): string[] {
 	return tokens;
 }
 
+function parsePublisherChoice(value: string): PublisherChoice | undefined {
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "gist") return "gist";
+	if (normalized === "huggingface" || normalized === "hf") return "huggingface";
+	if (normalized === "both" || normalized === "all") return "both";
+	return undefined;
+}
+
 function stripAtPrefix(value: string): string {
 	return value.startsWith("@") ? value.slice(1) : value;
 }
@@ -341,39 +464,10 @@ function resolvePath(cwd: string, value: string): string {
 	return path.isAbsolute(normalized) ? normalized : path.resolve(cwd, normalized);
 }
 
-function resolvePublishedGistUrl(stdout: string, stderr: string): string | undefined {
-	const combined = `${stdout}\n${stderr}`;
-	return extractGistUrl(combined) ?? extractFirstUrl(combined) ?? firstNonEmptyLine(stdout, stderr);
-}
-
-function extractGistUrl(text: string): string | undefined {
-	const match = text.match(/https?:\/\/gist\.github\.com\/\S+/);
-	return sanitizeExtractedUrl(match?.[0]);
-}
-
-function extractFirstUrl(text: string): string | undefined {
-	const match = text.match(/https?:\/\/\S+/);
-	return sanitizeExtractedUrl(match?.[0]);
-}
-
-function sanitizeExtractedUrl(value: string | undefined): string | undefined {
-	return value?.replace(/[),.;]+$/, "").trim() || undefined;
-}
-
-function firstNonEmptyLine(...chunks: string[]): string | undefined {
-	for (const chunk of chunks) {
-		for (const line of chunk.split(/\r?\n/)) {
-			const trimmed = line.trim();
-			if (trimmed) return trimmed;
-		}
-	}
-	return undefined;
-}
-
-export function buildSubmissionMessage(url: string | undefined): string {
-	const submitUrl = "https://openagentsessions.org/submit";
-	if (url) return `Gist: ${url} — submit at ${submitUrl} and paste that URL`;
-	return `Public gist created. Submit at ${submitUrl}. Could not parse gist URL from gh output.`;
+function buildHuggingFaceAuthMessage(authPath: string, detail?: string): string {
+	const hint = [`No Hugging Face token. Set HF_TOKEN or add {\"huggingface\":{\"type\":\"api_key\",\"key\":\"hf_...\"}} to ${authPath}.`];
+	if (detail) hint.push(detail);
+	return hint.join(" ");
 }
 
 function collectUsernames(): string[] {
