@@ -127,9 +127,8 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 				return;
 			}
 
-			const url = extractGistUrl(`${gist.stdout}\n${gist.stderr}`) ?? gist.stdout.trim();
-			ctx.ui.notify(`Public gist created: ${url}`, "info");
-			ctx.ui.notify("Submit: openagentsessions.org/submit → paste gist URL → attest → submit", "info");
+			const url = resolvePublishedGistUrl(gist.stdout, gist.stderr);
+			ctx.ui.notify(buildSubmissionMessage(url), "info");
 		},
 	});
 }
@@ -334,9 +333,39 @@ function resolvePath(cwd: string, value: string): string {
 	return path.isAbsolute(normalized) ? normalized : path.resolve(cwd, normalized);
 }
 
+function resolvePublishedGistUrl(stdout: string, stderr: string): string | undefined {
+	const combined = `${stdout}\n${stderr}`;
+	return extractGistUrl(combined) ?? extractFirstUrl(combined) ?? firstNonEmptyLine(stdout, stderr);
+}
+
 function extractGistUrl(text: string): string | undefined {
-	const match = text.match(/https:\/\/gist\.github\.com\/\S+/);
-	return match?.[0];
+	const match = text.match(/https?:\/\/gist\.github\.com\/\S+/);
+	return sanitizeExtractedUrl(match?.[0]);
+}
+
+function extractFirstUrl(text: string): string | undefined {
+	const match = text.match(/https?:\/\/\S+/);
+	return sanitizeExtractedUrl(match?.[0]);
+}
+
+function sanitizeExtractedUrl(value: string | undefined): string | undefined {
+	return value?.replace(/[),.;]+$/, "").trim() || undefined;
+}
+
+function firstNonEmptyLine(...chunks: string[]): string | undefined {
+	for (const chunk of chunks) {
+		for (const line of chunk.split(/\r?\n/)) {
+			const trimmed = line.trim();
+			if (trimmed) return trimmed;
+		}
+	}
+	return undefined;
+}
+
+export function buildSubmissionMessage(url: string | undefined): string {
+	const submitUrl = "https://openagentsessions.org/submit";
+	if (url) return `Gist: ${url} — submit at ${submitUrl} and paste that URL`;
+	return `Public gist created. Submit at ${submitUrl}. Could not parse gist URL from gh output.`;
 }
 
 function collectUsernames(): string[] {
