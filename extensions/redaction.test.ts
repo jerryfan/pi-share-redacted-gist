@@ -76,4 +76,31 @@ describe("redactSensitive", () => {
 		const result = redactSensitive(input, options);
 		expect(result.text).toContain("[REDACTED_OPAQUE_BASE64]");
 	});
+
+	test("redacts private key blocks inside structured strings", () => {
+		const input = [
+			JSON.stringify({
+				type: "message",
+				message: {
+					role: "toolResult",
+					content: [
+						{
+							type: "text",
+							text: [
+								"-----BEGIN OPENSSH PRIVATE KEY-----",
+								"b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAA",
+								"-----END OPENSSH PRIVATE KEY-----",
+							].join("\n"),
+						},
+					],
+				},
+			}),
+		].join("\n");
+
+		const result = redactSensitive(input, options);
+		const line = JSON.parse(result.text);
+		const text = line.message.content[0].text;
+		expect(text).toBe("[REDACTED_PRIVATE_KEY]");
+		expect(statMap(result.stats)).toMatchObject({ private_key: 1 });
+	});
 });

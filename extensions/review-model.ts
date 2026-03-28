@@ -1,4 +1,5 @@
 import { suggestPlaceholder } from "./review-apply";
+import { scanSecrets } from "./secret-scanner";
 
 export type ReviewModel = {
 	blocks: ReviewBlock[];
@@ -34,7 +35,6 @@ export type ReviewOccurrence = {
 };
 
 type CandidateDraft = Omit<ReviewOccurrence, "id" | "sessionCount">;
-
 type JsonRecord = Record<string, unknown>;
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -43,12 +43,6 @@ const PATH_PATTERN = /(?:\/Users\/[^\s"'`()\[\]{}]+|\/home\/[^\s"'`()\[\]{}]+|[A
 const HOSTNAME_PATTERN = /\b(?:localhost|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+)(?::\d+)?\b/gi;
 const IPV4_PATTERN = /\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/g;
 const IPV6_PRIVATE_PATTERN = /\b(?:fd|fc)[0-9a-f:]{6,}\b/gi;
-const SECRET_CONTEXT_PATTERN = /\b(?:token|secret|api[_-]?key|auth|authorization|bearer|cookie|session|password|passwd|signature)\b/i;
-const SECRET_ASSIGNMENT_PATTERN = /\b([A-Za-z][A-Za-z0-9_-]{1,40})\b\s*[:=]\s*("[^"]+"|'[^']+'|[^\s,;\]}]+)/g;
-const BEARER_PATTERN = /\bBearer\s+([A-Za-z0-9._~+\/-]{8,})/g;
-const OPAQUE_PATTERN = /[-A-Za-z0-9+/_=.]{16,}/g;
-const SAFE_GIT_CONTEXT_PATTERN = /\b(?:commit|revision|sha|parent|tree|oid)\b/i;
-const SAFE_HASH_CONTEXT_PATTERN = /\b(?:sha256|checksum|digest|integrity|hash)\b/i;
 const REDACTED_PATTERN = /^\[REDACTED_[A-Z0-9_]+\]$/;
 
 export function buildReviewModel(text: string, safeSignatures: ReadonlySet<string> = new Set()): ReviewModel {
@@ -206,34 +200,19 @@ function detectBlockOccurrences(block: ReviewBlock): CandidateDraft[] {
 	for (let lineIndex = 0; lineIndex < block.lines.length; lineIndex++) {
 		const line = block.lines[lineIndex]!;
 		if (!line.trim()) continue;
-		detectSecretAssignments(block, line, lineIndex, drafts);
-		detectBearerTokens(block, line, lineIndex, drafts);
+		detectSecretFindings(block, line, lineIndex, drafts);
 		detectEmails(block, line, lineIndex, drafts);
 		detectPaths(block, line, lineIndex, drafts);
 		detectUrls(block, line, lineIndex, drafts);
 		detectHostnames(block, line, lineIndex, drafts);
 		detectPrivateIps(block, line, lineIndex, drafts);
-		detectOpaqueValues(block, line, lineIndex, drafts);
 	}
 	return drafts;
 }
 
-function detectSecretAssignments(block: ReviewBlock, line: string, lineIndex: number, drafts: CandidateDraft[]): void {
-	for (const match of line.matchAll(SECRET_ASSIGNMENT_PATTERN)) {
-		const key = match[1] ?? "value";
-		const rawValue = trimWrappedValue(match[2] ?? "");
-		if (looksLikeFileLineReference(line, match.index ?? 0, rawValue)) continue;
-		if (!looksSensitiveValue(rawValue)) continue;
-		const keyScore = SECRET_CONTEXT_PATTERN.test(key) ? 115 : 90;
-		drafts.push(buildDraft(block, lineIndex, line, rawValue, keyScore, `${key} value`, `Sensitive-looking value assigned to ${key}`, suggestPlaceholder(rawValue)));
-	}
-}
-
-function detectBearerTokens(block: ReviewBlock, line: string, lineIndex: number, drafts: CandidateDraft[]): void {
-	for (const match of line.matchAll(BEARER_PATTERN)) {
-		const rawValue = sanitizeValue(match[1] ?? "");
-		if (!looksSensitiveValue(rawValue)) continue;
-		drafts.push(buildDraft(block, lineIndex, line, rawValue, 130, "Bearer token", "Authorization header style bearer token", "[REDACTED_SECRET]"));
+function detectSecretFindings(block: ReviewBlock, line: string, lineIndex: number, drafts: CandidateDraft[]): void {
+	for (const finding of scanSecrets(line)) {
+		drafts.push(buildDraft(block, lineIndex, line, finding.value, finding.score, finding.label, finding.reason, finding.placeholder));
 	}
 }
 
@@ -284,19 +263,8 @@ function detectPrivateIps(block: ReviewBlock, line: string, lineIndex: number, d
 	}
 }
 
-function detectOpaqueValues(block: ReviewBlock, line: string, lineIndex: number, drafts: CandidateDraft[]): void {
-	for (const match of line.matchAll(OPAQUE_PATTERN)) {
-		const rawValue = sanitizeValue(match[0] ?? "");
-		if (!looksSensitiveValue(rawValue)) continue;
-		if (rawValue.includes("/")) continue;
-		const score = scoreOpaqueValue(rawValue, line);
-		if (score === undefined) continue;
-		drafts.push(buildDraft(block, lineIndex, line, rawValue, score, "Opaque token", "Random-looking token worth checking manually", "[REDACTED_SECRET]"));
-	}
-}
-
 function buildDraft(
-	block: ReviewBlock,
+	_block: ReviewBlock,
 	lineIndex: number,
 	line: string,
 	value: string,
@@ -386,23 +354,6 @@ function firstMeaningfulLine(text: string): string {
 	return line.length > 72 ? `${line.slice(0, 69)}…` : line;
 }
 
-function trimWrappedValue(value: string): string {
-	const trimmed = value.trim();
-	if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-		return trimmed.slice(1, -1);
-	}
-	return sanitizeValue(trimmed);
-}
-
-function looksLikeFileLineReference(line: string, matchIndex: number, rawValue: string): boolean {
-	if (!/^\d+(?:-\d+)?$/.test(rawValue)) return false;
-	const previousChar = matchIndex > 0 ? line[matchIndex - 1] : "";
-	if (previousChar === "." || previousChar === "/" || previousChar === "\\") return true;
-	const prefix = line.slice(Math.max(0, matchIndex - 120), matchIndex);
-	const trailingToken = prefix.match(/[^\s'"`()\[\]{}<>]+$/)?.[0] ?? "";
-	return /[./\\][A-Za-z0-9_-]*\.$/.test(trailingToken) || /[./\\]/.test(trailingToken);
-}
-
 function sanitizeValue(value: string): string {
 	return value.replace(/^[({\["']+/, "").replace(/[),.;:\]}'"]+$/, "").trim();
 }
@@ -446,37 +397,6 @@ function isPrivateIpv4(value: string): boolean {
 	if (parts[0] === 192 && parts[1] === 168) return true;
 	if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
 	return false;
-}
-
-function scoreOpaqueValue(candidate: string, line: string): number | undefined {
-	if (looksWordySlug(candidate)) return undefined;
-	if (/^[0-9a-f]{40}$/i.test(candidate) && SAFE_GIT_CONTEXT_PATTERN.test(line)) return undefined;
-	if (/^[0-9a-f]{64}$/i.test(candidate) && SAFE_HASH_CONTEXT_PATTERN.test(line)) return undefined;
-	if (candidate.length >= 24 && SECRET_CONTEXT_PATTERN.test(line)) return 104;
-	if (candidate.length >= 32 && shannonEntropy(candidate) >= 3.2) return 86;
-	if (candidate.length >= 20 && shannonEntropy(candidate) >= 3.8) return 74;
-	return undefined;
-}
-
-function looksWordySlug(candidate: string): boolean {
-	const segments = candidate.split(/[-_]/).filter(Boolean);
-	const alphaSegments = segments.filter((segment) => /^[A-Za-z]{3,}$/.test(segment));
-	const letters = [...candidate].filter((char) => /[A-Za-z]/.test(char)).length;
-	if (alphaSegments.length < 2 || letters < 8) return false;
-	const vowels = [...candidate].filter((char) => /[AEIOUaeiou]/.test(char)).length;
-	const vowelRatio = letters > 0 ? vowels / letters : 0;
-	return vowelRatio >= 0.25 && vowelRatio <= 0.6;
-}
-
-function shannonEntropy(input: string): number {
-	const frequencies = new Map<string, number>();
-	for (const char of input) {
-		frequencies.set(char, (frequencies.get(char) ?? 0) + 1);
-	}
-	return [...frequencies.values()].reduce((sum, count) => {
-		const probability = count / input.length;
-		return sum - probability * Math.log2(probability);
-	}, 0);
 }
 
 function isRecord(value: unknown): value is JsonRecord {

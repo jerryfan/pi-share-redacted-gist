@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 - 2026-03-28
+
+### Added
+- added a detect-secrets-inspired secret plugin pipeline for auto-redaction and review
+- added built-in secret plugins for private keys, provider tokens, bearer tokens, keyword assignments, and entropy-based opaque strings
+- added regression tests for plugin initialization and private-key redaction
+
+### Changed
+- unified auto-redaction and review-mode secret detection so both use the same plugin stack
+- expanded internal/private URL redaction to also cover `.home`, `.arpa`, and `.test`
+
 ## 0.4.0 - 2026-03-28
 
 ### Added

@@ -9,7 +9,7 @@ Installs one pi extension command:
 ## What it does
 
 - reads the current persisted pi session file, or `--session @path`
-- redacts common sensitive patterns plus long random-looking opaque tokens
+- redacts common sensitive patterns plus a detect-secrets-inspired plugin stack for secrets/tokens
 - opens a transcript-style review UI by default
 - asks for publication attestation unless `--yes`
 - creates a public GitHub gist with:
@@ -68,6 +68,20 @@ Flags:
 
 - package code license: MIT
 - published session metadata license: `CC0-1.0`
+- secret scanning uses a detect-secrets-inspired plugin pipeline
+- built-in secret plugins:
+  - `PrivateKeyDetector`
+  - `GitHubTokenDetector`
+  - `AwsKeyDetector`
+  - `OpenAIDetector`
+  - `GoogleApiKeyDetector`
+  - `SlackTokenDetector`
+  - `JwtDetector`
+  - `BearerTokenDetector`
+  - `KeywordDetector`
+  - `HexHighEntropyString`
+  - `Base64HighEntropyString`
+  - `OpaqueTokenDetector`
 
 ## Development
 
