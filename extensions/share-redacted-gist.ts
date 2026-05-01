@@ -10,6 +10,7 @@ import { getConfiguredDatasets, loadPublishConfig, type PublishConfig } from "./
 import { buildSubmissionMessage, publishToGist, publishToHuggingFace, type PublicationBundle, type PublisherChoice } from "./publishers";
 import { redactSensitive, type RedactionStat } from "./redaction";
 import { redactSensitiveFileToolPayloads } from "./sensitive-file-redaction";
+import { initI18n, t } from "./i18n";
 
 export { buildSubmissionMessage } from "./publishers";
 
@@ -44,8 +45,9 @@ type OpenAgentSessionsMetadata = {
 const COMMAND_NAME = "share-redacted";
 
 export default function shareRedactedGist(pi: ExtensionAPI) {
+	initI18n(pi);
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Publish redacted pi session to GitHub gist and/or Hugging Face dataset",
+		description: t("cmd.description", "Publish redacted pi session to GitHub gist and/or Hugging Face dataset"),
 		handler: async (rawArgs, ctx) => {
 			const args = parseArgs(rawArgs);
 			if (args instanceof Error) {
@@ -62,7 +64,7 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 				? resolvePath(ctx.cwd, args.sessionPath)
 				: (ctx.sessionManager.getSessionFile() ?? undefined);
 			if (!sessionPath) {
-				ctx.ui.notify("No persisted session file. Pass --session @/path/to/session.jsonl", "error");
+				ctx.ui.notify(t("error.noSession", "No persisted session file. Pass --session @/path/to/session.jsonl"), "error");
 				return;
 			}
 
@@ -70,7 +72,7 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 			try {
 				rawSession = await fs.readFile(sessionPath, "utf8");
 			} catch (error) {
-				ctx.ui.notify(`Failed reading session file: ${toErrorMessage(error)}`, "error");
+				ctx.ui.notify(t("error.readSession", `Failed reading session file: ${toErrorMessage(error)}`, { message: toErrorMessage(error) }), "error");
 				return;
 			}
 
@@ -91,13 +93,13 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 				const { reviewRedactions } = await importLocalModule<{ reviewRedactions: typeof import("./review-ui").reviewRedactions }>("review-ui.ts");
 				const reviewed = await reviewRedactions(ctx, redactedSession);
 				if (!reviewed) {
-					ctx.ui.notify("Cancelled", "info");
+					ctx.ui.notify(t("review.cancelled", "Cancelled"), "info");
 					return;
 				}
 				finalSessionText = reviewed.text;
 				if (reviewed.manualRuleCount > 0) {
 					ctx.ui.notify(
-						`Review applied ${reviewed.manualRuleCount} manual redaction rule(s); ${reviewed.remainingCandidates} suspicious value(s) left`,
+						t("review.applied", `Review applied ${reviewed.manualRuleCount} manual redaction rule(s); ${reviewed.remainingCandidates} suspicious value(s) left`, { rules: reviewed.manualRuleCount, remaining: reviewed.remainingCandidates }),
 						"info",
 					);
 				}
@@ -105,7 +107,7 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 
 			const consentConfirmed = await confirmAttestation(ctx, args.yes, sessionPath, stats);
 			if (!consentConfirmed) {
-				ctx.ui.notify("Attestation not confirmed. Stopped.", "warning");
+				ctx.ui.notify(t("attestation.stopped", "Attestation not confirmed. Stopped."), "warning");
 				return;
 			}
 
@@ -141,7 +143,7 @@ export default function shareRedactedGist(pi: ExtensionAPI) {
 			if (publisher === "huggingface" || publisher === "both") {
 				huggingFaceDataset = await resolveHuggingFaceDataset(ctx, args, publishConfig.config);
 				if (!huggingFaceDataset) {
-					ctx.ui.notify("No Hugging Face dataset selected.", "error");
+					ctx.ui.notify(t("error.noDataset", "No Hugging Face dataset selected."), "error");
 					return;
 				}
 				const auth = await resolveHuggingFaceAccessToken();
@@ -293,19 +295,19 @@ async function resolvePublisherChoice(
 	if (huggingFaceEnabled) available.push("huggingface");
 
 	if (available.length === 0) {
-		ctx.ui.notify("No publishers configured. Enable gist and/or configure Hugging Face datasets.", "error");
+		ctx.ui.notify(t("error.noPublishers", "No publishers configured. Enable gist and/or configure Hugging Face datasets."), "error");
 		return undefined;
 	}
 	if (available.length === 1) return available[0];
 	if (!ctx.hasUI) {
-		ctx.ui.notify("Multiple publishers available. Pass --publisher gist|huggingface|both.", "error");
+		ctx.ui.notify(t("error.multiplePublishers", "Multiple publishers available. Pass --publisher gist|huggingface|both."), "error");
 		return undefined;
 	}
 
-	const selection = await ctx.ui.select("Publish to", ["GitHub gist", "Hugging Face dataset", "Both"]);
+	const selection = await ctx.ui.select(t("select.publishTo", "Publish to"), [t("select.gist", "GitHub gist"), t("select.huggingface", "Hugging Face dataset"), t("select.both", "Both")]);
 	if (selection === undefined) return undefined;
-	if (selection === "GitHub gist") return "gist";
-	if (selection === "Hugging Face dataset") return "huggingface";
+	if (selection === t("select.gist", "GitHub gist")) return "gist";
+	if (selection === t("select.huggingface", "Hugging Face dataset")) return "huggingface";
 	return "both";
 }
 
